@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block body %}
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <title>Add Value</title>
+    </head>
+    <body>
+      <br><br>
+      <div class="container theme-showcase "  style="padding: 20px 20px" role="main">
+        <form method="POST" action="{{ url_for('view',date=entry_date) }}">
+          <div class="card border-primary  mb-3">
+            <h5 class="card-header bg-primary text-white">{{ pretty_date }}</h5>
+            <div class="card-body">
+              <div class="form-group" >
+                <select class="form-control" name="food-select">
+                  {% for food in food_result %}
+                    <option value={{ food[0] }} >{{ food[1] }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <button type="submit" class="btn btn-primary" >ADD</button>
+            </form>
+            <br><br><br><br>
+            <div class="btn-group-toggle"  data-toggle="buttons">
+              <label class="btn btn-primary active badge-pill">
+                <input type="checkbox" checked autocomplete="off">Total
+              </label>
+              <button type="button" class="btn btn-light badge-pill">
+              Protein <span class="badge badge-primary badge-pill">{{ totals.protein }}</span>
+              <button type="button" class="btn btn-light badge-pill">
+              Carbohydrates <span class="badge badge-primary badge-pill">{{ totals.carbohydrates }}</span>
+              <button type="button" class="btn btn-light badge-pill">
+              Fat <span class="badge badge-primary badge-pill">{{ totals.fat }}</span>
+              <button type="button" class="btn btn-light badge-pill">
+              calories <span class="badge badge-primary badge-pill">{{ totals.calories }}</span>
+              </button>
+            </div>
+            <br><br>
+            <hr>
+            {% for food in log_results %}
+              <div class="btn-group-toggle"  data-toggle="buttons">
+                <label class="btn btn-primary active badge-pill">
+                  <input type="checkbox" checked autocomplete="off">{{ food[0] }}
+                </label>
+                <button type="button" class="btn btn-light badge-pill">
+                Protein <span class="badge badge-primary badge-pill">{{ food[1] }}</span>
+                <button type="button" class="btn btn-light badge-pill">
+                Carbohydrates <span class="badge badge-primary badge-pill">{{ food[2] }}</span>
+                <button type="button" class="btn btn-light badge-pill">
+                Fat <span class="badge badge-primary badge-pill">{{ food[3] }}</span>
+                <button type="button" class="btn btn-light badge-pill">
+                calories <span class="badge badge-primary badge-pill">{{ food[4] }}</span>
+                </button>
+              </div><hr>
+            {% endfor %}
+          </div>
+        </body>
+      </html>
+    {% endblock %}
