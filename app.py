@@ -1,106 +1,190 @@
-from flask import Flask,render_template,request,redirect,url_for,g
-import sqlite3
+from flask import Flask, render_template, request, redirect, url_for
+from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 
-app=Flask(__name__)
-DATABASE = 'D:/food tracker/database/food.db'
+app = Flask(__name__)
 
-def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
-    return db
+ENV = 'prod'
 
-@app.teardown_appcontext
-def close_connection(exception):
-    db = getattr(g, '_database', None)
-    if db is not None:
-        db.close()		
+if ENV == 'dev':
+    app.debug = True
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:mathew@localhost/foodtracker'
+else:
+    app.debug = False
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'postgres://qbgrryirjitcjx:bad5086d9a1ddf08e150618bf0a433af18ea16fdc07023f8ea35c21dcbe4a1e4@ec2-52-21-247-176.compute-1.amazonaws.com:5432/dappkrco3uqqru'
 
-@app.route("/",methods=['GET','POST'])
-def home():
-	db=get_db()
-	if request.method=='POST':
-		date = request.form['date']
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-		dt=datetime.strptime(date,'%Y-%m-%d')
-		database_date=datetime.strftime(dt,'%Y%m%d')
+db = SQLAlchemy(app)
 
-		db.execute('insert into log_date (entry_date) values(?)',[database_date])
-		db.commit()
-		
-	cur=db.execute('select log_date.entry_date,  sum(food.protein) as protein, sum(food.carbohydrates) as carbohydrates, sum(food.fat) as fat, sum(food.calories) as calories from log_date left join food_date on food_date.log_date_id=log_date.id left join food on food.id=food_date.food_id group by log_date.id order by log_date.entry_date DESC')
-	results=cur.fetchall()	
-
-	date_results=[]
-
-	for i in results:
-		single_date={}
-		single_date['entry_date']=i[0]
-		single_date['protein']=i[1]
-		single_date['carbohydrates']=i[2]
-		single_date['fat']=i[3]
-		single_date['calories']=i[4]
-
-		d=datetime.strptime(str(i[0]), '%Y%m%d')
-		single_date['pretty_date']=datetime.strftime(d,'%B %d %Y')
-		
-		date_results.append(single_date)
-
-	return render_template("home.html",results=date_results)
+log_food = db.Table('log_food',
+                    db.Column('log_id', db.Integer, db.ForeignKey(
+                        'log.id'), primary_key=True),
+                    db.Column('food_id', db.Integer, db.ForeignKey(
+                        'food.id'), primary_key=True)
+                    )
 
 
-@app.route("/addfood", methods=['GET','POST'])
-def addfood():
-	db=get_db()
-	if request.method=='POST':
-		name=request.form['food-name']
-		protein=int(request.form['protein'])
-		carbohydrates=int(request.form['carbohydrates'])
-		fat=int(request.form['fat'])
-		calories=protein*4 + carbohydrates*4 + fat*9
-        
-		db.execute('insert into food(name,protein,carbohydrates,fat,calories) values(?,?,?,?,?)', \
-		[name,protein,carbohydrates,fat,calories])
-		db.commit()
-	cur=db.execute('select name,protein,carbohydrates,fat,calories from food')
-	results=cur.fetchall()
-	return render_template('addfood.html',results=results)
+class Food(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), unique=True, nullable=False)
+    proteins = db.Column(db.Integer, nullable=False)
+    carbs = db.Column(db.Integer, nullable=False)
+    fats = db.Column(db.Integer, nullable=False)
 
-@app.route('/view/<date>',methods=['GET','POST'])
-def view(date):
-	db=get_db()
-	cur=db.execute('select id,entry_date from log_date where entry_date = ? ',[date])
-	date_result=cur.fetchone()
-
-	if request.method=='POST':
-		db.execute('insert into food_date (food_id, log_date_id) values (?,?)',[request.form['food-select'], date_result[0]])
-		db.commit()
-
-	
-	
-	d=datetime.strptime(str(date_result[1]), '%Y%m%d')
-
-	pretty_date=datetime.strftime(d,' %B %d %Y')
-
-	food_cur=db.execute('select id, name from food')
-	food_result=food_cur.fetchall()
-
-	log_cur=db.execute('select food.name, food.protein, food.carbohydrates, food.fat, food.calories from log_date join food_date on food_date.log_date_id=log_date.id join food on food.id=food_date.food_id where log_date.entry_date=?',[date])
-	log_results=log_cur.fetchall()
-
-	totals={'protein':0, 'carbohydrates':0,'fat':0,'calories':0}
-	
-
-	for food in log_results:
-		totals['protein']+=int(food[1])
-		totals['carbohydrates']+=int(food[2])
-		totals['fat']+=int(food[3])
-		totals['calories']+=int(food[4])
+    @property
+    def calories(self):
+        return self.proteins * 4 + self.carbs * 4 + self.fats * 9
 
 
+class Log(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, nullable=False)
+    foods = db.relationship('Food', secondary=log_food, lazy='dynamic')
 
-	return render_template('view.html',entry_date=date_result[1],pretty_date=pretty_date,food_result=food_result,log_results=log_results,totals=totals)
+
+@app.route('/')
+def index():
+    logs = Log.query.order_by(Log.date.desc()).all()
+
+    log_dates = []
+
+    for log in logs:
+        proteins = 0
+        carbs = 0
+        fats = 0
+        calories = 0
+
+        for food in log.foods:
+            proteins += food.proteins
+            carbs += food.carbs
+            fats += food.fats
+            calories += food.calories
+
+        log_dates.append({
+            'log_date': log,
+            'proteins': proteins,
+            'carbs': carbs,
+            'fats': fats,
+            'calories': calories
+        })
+
+    return render_template('index.html', log_dates=log_dates)
 
 
-app.run(debug=True)	
+@app.route('/create_log', methods=['POST'])
+def create_log():
+    date = request.form.get('date')
+
+    log = Log(date=datetime.strptime(date, '%Y-%m-%d'))
+
+    db.session.add(log)
+    db.session.commit()
+
+    return redirect(url_for('view', log_id=log.id))
+
+
+@app.route('/add')
+def add():
+    foods = Food.query.all()
+
+    return render_template('add.html', foods=foods, food=None)
+
+
+@app.route('/add', methods=['POST'])
+def add_post():
+    food_name = request.form.get('food-name')
+    proteins = request.form.get('protein')
+    carbs = request.form.get('carbohydrates')
+    fats = request.form.get('fat')
+
+    food_id = request.form.get('food-id')
+
+    if food_id:
+        food = Food.query.get_or_404(food_id)
+        food.name = food_name
+        food.proteins = proteins
+        food.carbs = carbs
+        food.fats = fats
+
+    else:
+        new_food = Food(
+            name=food_name,
+            proteins=proteins,
+            carbs=carbs,
+            fats=fats
+        )
+
+        db.session.add(new_food)
+
+    db.session.commit()
+
+    return redirect(url_for('add'))
+
+
+@app.route('/delete_food/<int:food_id>')
+def delete_food(food_id):
+    food = Food.query.get_or_404(food_id)
+    db.session.delete(food)
+    db.session.commit()
+
+    return redirect(url_for('add'))
+
+
+@app.route('/edit_food/<int:food_id>')
+def edit_food(food_id):
+    food = Food.query.get_or_404(food_id)
+    foods = Food.query.all()
+
+    return render_template('add.html', food=food, foods=foods)
+
+
+@app.route('/view/<int:log_id>')
+def view(log_id):
+    log = Log.query.get_or_404(log_id)
+
+    foods = Food.query.all()
+
+    totals = {
+        'protein': 0,
+        'carbs': 0,
+        'fat': 0,
+        'calories': 0
+    }
+
+    for food in log.foods:
+        totals['protein'] += food.proteins
+        totals['carbs'] += food.carbs
+        totals['fat'] += food.fats
+        totals['calories'] += food.calories
+
+    return render_template('view.html', foods=foods, log=log, totals=totals)
+
+
+@app.route('/add_food_to_log/<int:log_id>', methods=['POST'])
+def add_food_to_log(log_id):
+    log = Log.query.get_or_404(log_id)
+
+    selected_food = request.form.get('food-select')
+
+    food = Food.query.get(int(selected_food))
+
+    log.foods.append(food)
+    db.session.commit()
+
+    return redirect(url_for('view', log_id=log_id))
+
+
+@app.route('/remove_food_from_log/<int:log_id>/<int:food_id>')
+def remove_food_from_log(log_id, food_id):
+    log = Log.query.get(log_id)
+    food = Food.query.get(food_id)
+
+    log.foods.remove(food)
+    db.session.commit()
+
+    return redirect(url_for('view', log_id=log_id))
+
+
+if __name__ == '__main__':
+    app.run()
